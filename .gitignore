@@ -1,0 +1,15 @@
+.env
+*.log
+.DS_Store
+
+apps/api-server/.env
+apps/api-server/node_modules/
+apps/api-server/dist/
+
+apps/web-dashboard/node_modules/
+apps/web-dashboard/.next/
+
+apps/ai-engine/.venv/
+apps/ai-engine/__pycache__/
+
+infra/terraform/.terraform/

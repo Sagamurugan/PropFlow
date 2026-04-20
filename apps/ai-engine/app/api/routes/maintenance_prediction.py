@@ -1,0 +1,1 @@
+"""Maintenance prediction route placeholder."""

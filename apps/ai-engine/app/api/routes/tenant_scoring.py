@@ -1,0 +1,1 @@
+"""Tenant scoring route placeholder."""
