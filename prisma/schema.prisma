@@ -1,0 +1,504 @@
+// ==============================================================================
+// PropFlow AI - Database Schema (Phase 3: Operations Enabled)
+// Configured for Organization, User, RefreshToken, Property, Unit, Tenant,
+// TenantDocument, OccupancyHistory, Lease, RentRecord, Technician,
+// MaintenanceRequest, and Notification models.
+// Database Engine: PostgreSQL (Neon / Local)
+// ==============================================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// User role definitions for Hierarchical RBAC
+enum UserRole {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  TENANT
+}
+
+// Tenant Organization context
+model Organization {
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique
+  subscriptionPlan String   @default("FREE") // FREE, PRO, ENTERPRISE
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  users          User[]
+  properties     Property[]
+  units          Unit[]
+  tenants        Tenant[]
+  leases         Lease[]
+  maintenance    MaintenanceRequest[]
+  activityLogs   ActivityLog[]
+  monthlyReports MonthlyReport[]
+
+  @@index([slug])
+}
+
+// Core User Entity
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         UserRole @default(TENANT)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Multi-Tenancy Boundary Mapping
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+// JWT Refresh Token Rotational ledger for session persistence
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+// ==============================================================================
+// Phase 2 Core Business Models
+// ==============================================================================
+
+enum PropertyType {
+  APARTMENT
+  VILLA
+  COMMERCIAL
+  HOSTEL
+  MIXED_USE
+}
+
+enum PropertyStatus {
+  ACTIVE
+  INACTIVE
+  UNDER_MAINTENANCE
+}
+
+model Property {
+  id           String         @id @default(uuid())
+  name         String
+  propertyCode String         @unique
+  propertyType PropertyType
+  description  String?
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  country      String         @default("USA")
+  postalCode   String
+  totalFloors  Int
+  totalUnits   Int
+  status       PropertyStatus @default(ACTIVE)
+  isDeleted    Boolean        @default(false)
+  imageUrls    String[]
+  yearBuilt    Int?
+  managerName  String?
+  
+  // Auditing
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Multi-Tenancy Mapping
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  units         Unit[]
+  maintenance   MaintenanceRequest[]
+  healthHistory PropertyHealthHistory[]
+
+  @@index([organizationId])
+  @@index([propertyCode])
+}
+
+enum UnitType {
+  BHK1 @map("1BHK")
+  BHK2 @map("2BHK")
+  BHK3 @map("3BHK")
+  STUDIO
+  SHOP
+  OFFICE
+}
+
+enum UnitStatus {
+  VACANT
+  OCCUPIED
+  RESERVED
+  MAINTENANCE
+}
+
+model Unit {
+  id            String     @id @default(uuid())
+  unitNumber    String
+  floorNumber   Int
+  unitType      UnitType
+  areaSqFt      Int
+  bedrooms      Int
+  bathrooms     Float
+  rentAmount    Decimal    @db.Decimal(10, 2)
+  depositAmount Decimal    @db.Decimal(10, 2)
+  status        UnitStatus @default(VACANT)
+  
+  // Auditing
+  createdBy     String?
+  updatedBy     String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relations
+  propertyId     String
+  property       Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenants        Tenant[]
+  occupancies    OccupancyHistory[]
+  leases         Lease[]
+  maintenance    MaintenanceRequest[]
+
+  @@unique([propertyId, unitNumber])
+  @@index([propertyId])
+  @@index([organizationId])
+}
+
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+  MOVED_OUT
+}
+
+model Tenant {
+  id               String       @id @default(uuid())
+  firstName        String
+  lastName         String
+  email            String
+  phone            String
+  emergencyContact String?
+  occupation       String?
+  nationalId       String?
+  dateOfBirth      DateTime?
+  status           TenantStatus @default(ACTIVE)
+  avatarUrl        String?
+  moveInDate       DateTime?
+  
+  // Auditing
+  createdBy        String?
+  updatedBy        String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Relations
+  unitId         String?
+  unit           Unit?              @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents      TenantDocument[]
+  occupancies    OccupancyHistory[]
+  leases         Lease[]
+  rentRecords    RentRecord[]
+  maintenance    MaintenanceRequest[]
+
+  @@index([unitId])
+  @@index([organizationId])
+  @@index([email])
+}
+
+model TenantDocument {
+  id           String   @id @default(uuid())
+  documentType String   // PASSPORT, NATIONAL_ID, RENTAL_AGREEMENT, etc.
+  documentUrl  String
+  createdAt    DateTime @default(now())
+
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model OccupancyHistory {
+  id          String    @id @default(uuid())
+  moveInDate  DateTime
+  moveOutDate DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unitId      String
+  unit        Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([unitId])
+}
+
+// ==============================================================================
+// Phase 3 Operations Models
+// ==============================================================================
+
+enum LeaseStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  RENEWED
+}
+
+model Lease {
+  id                String      @id @default(uuid())
+  leaseNumber       String      @unique
+  startDate         DateTime
+  endDate           DateTime
+  monthlyRent       Decimal     @db.Decimal(10, 2)
+  securityDeposit   Decimal     @db.Decimal(10, 2)
+  noticePeriodDays  Int         @default(30)
+  status            LeaseStatus @default(DRAFT)
+  signedDocumentUrl String?     // Cloudinary link
+  
+  // Auditing
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  // Lease Versioning Self-Relation
+  previousLeaseId   String?     @unique
+  previousLease     Lease?      @relation("LeaseHistory", fields: [previousLeaseId], references: [id], onDelete: SetNull)
+  nextLease         Lease?      @relation("LeaseHistory")
+
+  // Multi-Tenancy Boundary Mapping
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  tenantId          String
+  tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unitId            String
+  unit              Unit         @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  rentRecords       RentRecord[]
+
+  @@index([organizationId])
+  @@index([tenantId])
+  @@index([unitId])
+  @@index([leaseNumber])
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+model RentRecord {
+  id            String        @id @default(uuid())
+  month         String        // e.g. "2026-07"
+  amountDue     Decimal       @db.Decimal(10, 2)
+  amountPaid    Decimal       @default(0.00) @db.Decimal(10, 2)
+  lateFee       Decimal       @default(0.00) @db.Decimal(10, 2)
+  balance       Decimal       @db.Decimal(10, 2)
+  dueDate       DateTime
+  paymentStatus PaymentStatus @default(PENDING)
+  reference     String?       // Cheque/Bank transaction reference
+  receiptUrl    String?       // Cloudinary transaction receipt link
+  paidAt        DateTime?
+  
+  // Auditing
+  createdBy     String?
+  updatedBy     String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leaseId       String
+  lease         Lease         @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([leaseId])
+  @@index([month])
+}
+
+model Technician {
+  id             String               @id @default(uuid())
+  name           String
+  phone          String
+  specialization String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  // Relations
+  requests       MaintenanceRequest[]
+}
+
+enum MaintenanceCategory {
+  PLUMBING
+  ELECTRICAL
+  CLEANING
+  SECURITY
+  INTERNET
+  OTHER
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MaintenanceStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model MaintenanceRequest {
+  id                   String              @id @default(uuid())
+  ticketNumber         String              @unique
+  category             MaintenanceCategory @default(OTHER)
+  priority             MaintenancePriority @default(MEDIUM)
+  description          String              @db.Text
+  status               MaintenanceStatus   @default(OPEN)
+  imageUrls            String[]
+  resolutionNotes      String?             @db.Text
+  targetResolutionDate DateTime?
+  
+  // Auditing
+  createdBy            String?
+  updatedBy            String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  // Multi-Tenancy Boundary Mapping
+  organizationId  String
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  tenantId        String
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unitId          String
+  unit            Unit                @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  propertyId      String
+  property        Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  technicianId    String?
+  technician      Technician?         @relation(fields: [technicianId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([tenantId])
+  @@index([unitId])
+  @@index([propertyId])
+  @@index([technicianId])
+  @@index([ticketNumber])
+}
+
+enum NotificationType {
+  LEASE
+  PAYMENT
+  MAINTENANCE
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  // Recipient Mapping
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ==============================================================================
+// Phase 4 Analytics & Auditing Models
+// ==============================================================================
+
+model ActivityLog {
+  id             String   @id @default(uuid())
+  action         String   // e.g. "Tenant Added", "Lease Created", "Payment Recorded"
+  entityType     String   // e.g. "TENANT", "LEASE", "PAYMENT", "MAINTENANCE"
+  entityId       String
+  performedBy    String   // Name or ID of user
+  createdAt      DateTime @default(now())
+
+  // Multi-Tenancy Mapping
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([createdAt])
+}
+
+// Property Health logs for historical chart rendering
+model PropertyHealthHistory {
+  id               String   @id @default(uuid())
+  score            Int
+  occupancyScore   Int
+  financialScore   Int
+  maintenanceScore Int
+  leaseScore       Int
+  recordedAt       DateTime @default(now())
+  
+  propertyId       String
+  property         Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  
+  @@index([propertyId])
+  @@index([recordedAt])
+}
+
+// Stored monthly executive reports
+model MonthlyReport {
+  id             String   @id @default(uuid())
+  month          String   // e.g. "2026-05"
+  summary        String   @db.Text
+  risks          String   @db.Text
+  actions        String   @db.Text
+  createdAt      DateTime @default(now())
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@index([organizationId])
+  @@index([month])
+}
+
