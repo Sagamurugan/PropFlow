@@ -60,11 +60,13 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}): P
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  // Inject Gemini API Key override from localStorage if set
+  // Inject optional AI provider key override from localStorage if set
   if (typeof window !== 'undefined') {
-    const userApiKey = localStorage.getItem('pf_gemini_api_key');
+    const userApiKey =
+      localStorage.getItem('pf_ai_api_key') ||
+      localStorage.getItem('pf_gemini_api_key');
     if (userApiKey) {
-      headers.set('x-gemini-api-key', userApiKey);
+      headers.set('x-ai-api-key', userApiKey);
     }
   }
 
@@ -88,7 +90,7 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}): P
     } else {
       clearTokens();
       if (typeof window !== 'undefined') {
-        window.location.href = '/auth/login';
+        window.location.href = '/login';
       }
       throw new Error('Session expired. Please log in again.');
     }

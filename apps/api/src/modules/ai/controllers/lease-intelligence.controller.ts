@@ -18,7 +18,10 @@ export class LeaseIntelligenceController {
     if (!file) {
       throw new BadRequestException('Lease agreement PDF file is required.');
     }
-    const apiKey = req.headers['x-gemini-api-key'] as string | undefined;
+    const apiKey =
+      (req.headers['x-ai-api-key'] as string | undefined) ||
+      (req.headers['x-groq-api-key'] as string | undefined) ||
+      (req.headers['x-gemini-api-key'] as string | undefined);
     return this.leaseIntelligenceService.parseLeasePdf(file.buffer, apiKey);
   }
 }

@@ -55,9 +55,11 @@ function LeasesContent() {
       if (token) {
         headers.set('Authorization', `Bearer ${token}`);
       }
-      const userApiKey = localStorage.getItem('pf_gemini_api_key');
+      const userApiKey =
+        localStorage.getItem('pf_ai_api_key') ||
+        localStorage.getItem('pf_gemini_api_key');
       if (userApiKey) {
-        headers.set('x-gemini-api-key', userApiKey);
+        headers.set('x-ai-api-key', userApiKey);
       }
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/ai/leases/parse`, {
         method: 'POST',

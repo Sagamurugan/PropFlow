@@ -26,8 +26,21 @@ export class LeasesService {
       throw new NotFoundException('Selected unit does not exist in your organization');
     }
 
+    const tenant = await this.prisma.tenant.findFirst({
+      where: { id: dto.tenantId, organizationId, status: 'ACTIVE' },
+      select: { id: true, unitId: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Selected tenant does not exist in your organization');
+    }
+
     if (unit.status === UnitStatus.OCCUPIED) {
       throw new ConflictException('Lease Validation Failed: This unit is already occupied by an active tenant');
+    }
+
+    if (tenant.unitId && tenant.unitId !== dto.unitId) {
+      throw new ConflictException('Selected tenant is already assigned to another unit');
     }
 
     return this.prisma.$transaction(async (tx) => {

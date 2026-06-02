@@ -40,7 +40,9 @@ export class AuthService {
       // Resolve user role
       let finalRole: UserRole = UserRole.TENANT;
       if (dto.role === 'MANAGER') finalRole = UserRole.MANAGER;
-      if (dto.role === 'OWNER') finalRole = UserRole.OWNER;
+      if (dto.role === 'OWNER') {
+        throw new BadRequestException('Owner accounts can only be created when registering a new organization');
+      }
 
       const user = await this.prisma.user.create({
         data: {

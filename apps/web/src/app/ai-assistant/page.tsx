@@ -51,7 +51,10 @@ export default function AssistantPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedKey = localStorage.getItem('pf_gemini_api_key') || '';
+      const savedKey =
+        localStorage.getItem('pf_ai_api_key') ||
+        localStorage.getItem('pf_gemini_api_key') ||
+        '';
       setApiKeyInput(savedKey);
       if (savedKey) setKeySaved(true);
     }
@@ -59,7 +62,7 @@ export default function AssistantPage() {
 
   const handleSaveApiKey = () => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('pf_gemini_api_key', apiKeyInput);
+      localStorage.setItem('pf_ai_api_key', apiKeyInput);
       setKeySaved(!!apiKeyInput);
       setShowApiKeyBox(false);
     }
@@ -185,12 +188,12 @@ export default function AssistantPage() {
         {showApiKeyBox && (
           <div className="bg-[#0c0e1e]/80 border border-indigo-500/20 rounded-xl p-4 space-y-3 animate-in fade-in duration-200">
             <p className="text-xs text-slate-400 leading-relaxed">
-              If GEMINI_API_KEY is not set in the root `.env` server environment, you can supply your own Gemini API key below. It will be stored securely in your browser and used dynamically for AI calls.
+              If no server-side AI key is configured, you can supply your own Gemini or Groq API key below. It will be stored in your browser and used dynamically for AI calls.
             </p>
             <div className="flex gap-2">
               <input
                 type="password"
-                placeholder="Paste your Gemini API key (AIzaSy...)"
+                placeholder="Paste your Gemini or Groq API key"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
                 className="flex-1 px-3 py-2.5 text-xs bg-slate-900 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500/40 transition-all font-mono"

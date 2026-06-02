@@ -13,7 +13,10 @@ export class PropertyHealthController {
   @Get(':id/health')
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   getHealth(@Param('id') id: string, @Req() req: any) {
-    const apiKey = req.headers['x-gemini-api-key'] as string | undefined;
+    const apiKey =
+      (req.headers['x-ai-api-key'] as string | undefined) ||
+      (req.headers['x-groq-api-key'] as string | undefined) ||
+      (req.headers['x-gemini-api-key'] as string | undefined);
     return this.propertyHealthService.calculatePropertyHealth(id, req.user.organizationId, apiKey);
   }
 

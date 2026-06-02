@@ -16,7 +16,10 @@ export class AssistantController {
     if (!query || query.trim().length === 0) {
       throw new BadRequestException('Query string is required.');
     }
-    const apiKey = req.headers['x-gemini-api-key'] as string | undefined;
+    const apiKey =
+      (req.headers['x-ai-api-key'] as string | undefined) ||
+      (req.headers['x-groq-api-key'] as string | undefined) ||
+      (req.headers['x-gemini-api-key'] as string | undefined);
     return this.assistantService.processQuery(query, req.user.organizationId, apiKey);
   }
 }

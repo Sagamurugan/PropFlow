@@ -5,13 +5,16 @@ import { GoogleGenerativeAI, Schema } from '@google/generative-ai';
 @Injectable()
 export class GeminiProvider {
   private defaultModel: string;
+  private groqModel: string;
 
   constructor(private configService: ConfigService) {
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    if (!apiKey || apiKey === 'your_gemini_api_key') {
-      console.warn('⚠️ WARNING: GEMINI_API_KEY is not configured or using default placeholder.');
+    const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY');
+    const groqApiKey = this.configService.get<string>('GROQ_API_KEY');
+    if ((!geminiApiKey || geminiApiKey === 'your_gemini_api_key') && !groqApiKey) {
+      console.warn('⚠️ WARNING: No AI provider key is configured. Set GEMINI_API_KEY or GROQ_API_KEY in the root .env file.');
     }
     this.defaultModel = this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
+    this.groqModel = this.configService.get<string>('GROQ_MODEL') || 'llama-3.1-8b-instant';
   }
 
   /**
@@ -23,11 +26,15 @@ export class GeminiProvider {
     responseSchema?: Schema,
     apiKeyOverride?: string,
   ): Promise<any> {
-    const activeKey = apiKeyOverride || this.configService.get<string>('GEMINI_API_KEY');
-    if (!activeKey || activeKey === 'your_gemini_api_key' || activeKey.trim() === '') {
+    const activeKey = this.resolveApiKey(apiKeyOverride);
+    if (!activeKey) {
       throw new InternalServerErrorException(
-        'Gemini API key is not configured. Please supply it in Settings or your root .env file.',
+        'AI provider key is not configured. Please supply a Gemini or Groq API key in Settings or your root .env file.',
       );
+    }
+
+    if (this.isGroqKey(activeKey)) {
+      return this.executeGroqJsonGeneration(activeKey, systemInstruction, prompt);
     }
 
     const selectedModel = this.defaultModel;
@@ -87,11 +94,15 @@ export class GeminiProvider {
     prompt: string,
     apiKeyOverride?: string,
   ): Promise<string> {
-    const activeKey = apiKeyOverride || this.configService.get<string>('GEMINI_API_KEY');
-    if (!activeKey || activeKey === 'your_gemini_api_key' || activeKey.trim() === '') {
+    const activeKey = this.resolveApiKey(apiKeyOverride);
+    if (!activeKey) {
       throw new InternalServerErrorException(
-        'Gemini API key is not configured. Please supply it in Settings or your root .env file.',
+        'AI provider key is not configured. Please supply a Gemini or Groq API key in Settings or your root .env file.',
       );
+    }
+
+    if (this.isGroqKey(activeKey)) {
+      return this.executeGroqTextGeneration(activeKey, systemInstruction, prompt);
     }
 
     const selectedModel = this.defaultModel;
@@ -130,5 +141,94 @@ export class GeminiProvider {
     });
 
     return result.response.text();
+  }
+
+  private resolveApiKey(apiKeyOverride?: string): string | null {
+    const candidate =
+      apiKeyOverride ||
+      this.configService.get<string>('GROQ_API_KEY') ||
+      this.configService.get<string>('GEMINI_API_KEY') ||
+      '';
+
+    if (!candidate || candidate.trim() === '' || candidate === 'your_gemini_api_key') {
+      return null;
+    }
+
+    return candidate.trim();
+  }
+
+  private isGroqKey(apiKey: string): boolean {
+    return apiKey.startsWith('gsk_');
+  }
+
+  private async executeGroqJsonGeneration(
+    apiKey: string,
+    systemInstruction: string,
+    prompt: string,
+  ): Promise<any> {
+    const text = await this.executeGroqRequest(apiKey, systemInstruction, prompt, true);
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new InternalServerErrorException('Groq did not return valid JSON for the structured assistant step.');
+      }
+      return JSON.parse(jsonMatch[0]);
+    }
+  }
+
+  private async executeGroqTextGeneration(
+    apiKey: string,
+    systemInstruction: string,
+    prompt: string,
+  ): Promise<string> {
+    return this.executeGroqRequest(apiKey, systemInstruction, prompt, false);
+  }
+
+  private async executeGroqRequest(
+    apiKey: string,
+    systemInstruction: string,
+    prompt: string,
+    requireJson: boolean,
+  ): Promise<string> {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.groqModel,
+        temperature: 0.2,
+        response_format: requireJson ? { type: 'json_object' } : undefined,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          {
+            role: 'user',
+            content: requireJson
+              ? `${prompt}\n\nReturn valid JSON only with no markdown fences.`
+              : prompt,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new InternalServerErrorException(`Groq request failed: ${response.status} ${errorText}`);
+    }
+
+    const payload = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = payload.choices?.[0]?.message?.content?.trim();
+
+    if (!content) {
+      throw new InternalServerErrorException('Groq returned an empty response.');
+    }
+
+    return content;
   }
 }

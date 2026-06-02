@@ -8,7 +8,20 @@ import { UpdateUnitDto } from './dto/update-unit.dto';
 export class UnitsService {
   constructor(private prisma: PrismaService) {}
 
+  private async ensurePropertyOwnership(propertyId: string, organizationId: string) {
+    const property = await this.prisma.property.findFirst({
+      where: { id: propertyId, organizationId, isDeleted: false },
+      select: { id: true },
+    });
+
+    if (!property) {
+      throw new NotFoundException('Selected property does not exist in your organization');
+    }
+  }
+
   async create(dto: CreateUnitDto, organizationId: string, userId: string) {
+    await this.ensurePropertyOwnership(dto.propertyId, organizationId);
+
     // Check if unit number is already registered inside property
     const existing = await this.prisma.unit.findUnique({
       where: {
@@ -53,6 +66,8 @@ export class UnitsService {
   }
 
   async bulkGenerate(dto: BulkGenerateUnitDto, organizationId: string, userId: string) {
+    await this.ensurePropertyOwnership(dto.propertyId, organizationId);
+
     const { preview } = await this.bulkGeneratePreview(dto);
 
     // Verify no code collision in db

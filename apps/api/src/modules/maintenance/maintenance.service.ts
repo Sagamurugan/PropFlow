@@ -21,6 +21,37 @@ export class MaintenanceService {
 
     const { tenantId, unitId, propertyId, ...ticketData } = dto;
 
+    const [tenant, unit, property] = await Promise.all([
+      this.prisma.tenant.findFirst({
+        where: { id: tenantId, organizationId },
+        select: { id: true },
+      }),
+      this.prisma.unit.findFirst({
+        where: { id: unitId, organizationId },
+        select: { id: true, propertyId: true },
+      }),
+      this.prisma.property.findFirst({
+        where: { id: propertyId, organizationId, isDeleted: false },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!tenant) {
+      throw new NotFoundException('Selected tenant does not exist in your organization');
+    }
+
+    if (!unit) {
+      throw new NotFoundException('Selected unit does not exist in your organization');
+    }
+
+    if (!property) {
+      throw new NotFoundException('Selected property does not exist in your organization');
+    }
+
+    if (unit.propertyId !== propertyId) {
+      throw new ConflictException('Selected unit does not belong to the selected property');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const ticket = await tx.maintenanceRequest.create({
         data: {

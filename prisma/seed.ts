@@ -1,9 +1,17 @@
 import { PrismaClient, UserRole, PropertyType, UnitType, UnitStatus, TenantStatus, LeaseStatus, PaymentStatus, MaintenanceCategory, MaintenancePriority, MaintenanceStatus, NotificationType } from '@prisma/client';
+import { randomBytes, scryptSync } from 'crypto';
 
 const prisma = new PrismaClient();
 
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
 async function main() {
   console.log('🌱 Starting database seeding...');
+  const demoPasswordHash = hashPassword('password');
 
   // 1. Create Organization (Tenant Context)
   const org = await prisma.organization.create({
@@ -20,7 +28,7 @@ async function main() {
       email: 'owner@propflow.ai',
       firstName: 'John',
       lastName: 'Landlord',
-      passwordHash: '8b704c7df76f1839c4f52e5b60281efd:a5b4fc7df76f1839c4f52e5b60281efda5b4fc7df76f1839c4f52e5b60281efd', // secure hash mockup
+      passwordHash: demoPasswordHash,
       role: UserRole.OWNER,
       organizationId: org.id,
     },
@@ -33,7 +41,7 @@ async function main() {
       email: 'manager@propflow.ai',
       firstName: 'Sarah',
       lastName: 'Operator',
-      passwordHash: '8b704c7df76f1839c4f52e5b60281efd:a5b4fc7df76f1839c4f52e5b60281efda5b4fc7df76f1839c4f52e5b60281efd',
+      passwordHash: demoPasswordHash,
       role: UserRole.MANAGER,
       organizationId: org.id,
     },
@@ -110,6 +118,18 @@ async function main() {
     },
   });
   console.log(`Created Tenant: ${tenant1.firstName} ${tenant1.lastName}`);
+
+  await prisma.user.create({
+    data: {
+      email: 'tenant@propflow.ai',
+      firstName: tenant1.firstName,
+      lastName: tenant1.lastName,
+      passwordHash: demoPasswordHash,
+      role: UserRole.TENANT,
+      organizationId: org.id,
+    },
+  });
+  console.log('Created Tenant Portal User: tenant@propflow.ai');
 
   // 7. Create Lease
   const lease = await prisma.lease.create({
